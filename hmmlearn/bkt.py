@@ -5,6 +5,7 @@
 
 import numpy as np
 from .hmm import MultinomialHMM
+from .utils import normalize
 
 __all__ = ["BKT"]
 
@@ -70,33 +71,44 @@ class BKT(MultinomialHMM):
         self.p_slip = p_slip
         self.p_guess = p_guess
 
-        # Initialize transitions matrix
-        # Force probability of forgetting to 0
-        # [[from known to known, from known to unknown],
-        #  [from unknown to known, from unknown to unknown]]
-        transmat_prior =  np.array([[1.0, 0.0],
-                                    [self.p_transit, (1.0-self.p_transit)]])
-
-         # Implement as MultinomialHMM with two states: {known, unknown}
+        # Implement as MultinomialHMM with two states: {known, unknown}
         MultinomialHMM.__init__(self, n_components=2,
-                                transmat_prior=transmat_prior,
                                 tol=tol, verbose=verbose,
-                                params="st",    # Do not update emissions matrix, use guess & slip
-                                init_params="") # Custom priors, transitions, and emissions matrices
+                                params="st", # NO UPDATE of emissions (i.e., guess & slip)
+                                init_params="")
+
+
+    def _init(self, X, lengths=None):
+        super(BKT, self)._init(X, lengths=lengths)
 
         # Override priors matrix
         self.startprob_ = np.array([self.p_init, (1.0-self.p_init)])
 
+        # Override transitions matrix
+        # Force probability of forgetting to 0
+        # [[from known to known, from known to unknown],
+        #  [from unknown to known, from unknown to unknown]]
+        self.transmat_ =  np.matrix([[1.0, 0.0],
+                                    [self.p_transit, (1.0-self.p_transit)]])
+
         # Override emissions matrix with slip and guess probabilities
         # [[ P(known | right), P(known | wrong) ],
         #  [ P(unknown | right), P(unknown | wrong) ]]
-        self.emissionprob_ = np.array([[(1.0-self.p_slip), self.p_slip],
+        self.emissionprob_ = np.matrix([[(1.0-self.p_slip), self.p_slip],
                                         [self.p_guess, (1.0-self.p_guess)]])
 
 
-    #def _do_mstep(self, stats):
-        #super(MultinomialHMM, self)._do_mstep(stats)
-        
-        # Override emissions matrix with slip and guess probabilities
-        #self.emissionprob_ = [ [(1.0-self.p_slip), self.p_slip], [self.p_guess, (1.0-self.p_guess)] ]
+    def _do_mstep(self, stats):
+        # Update probability of prior knowledge
+        startprob_ = self.startprob_prior - 1.0 + stats['start']
+        self.startprob_ = np.where(self.startprob_ == 0.0, self.startprob_, startprob_)
+        normalize(self.startprob_)
+
+        # Update probabilities of transitioning from unknown to known
+        transmat_ = self.transmat_prior - 1.0 + stats['trans']
+        self.transmat_ = np.where(self.transmat_ == 0.0, self.transmat_, transmat_)
+        normalize(self.transmat_, axis=1)
+
+        # Assumes ZERO probability of forgetting
+        self.transmat_[0] = [1.0, 0.0]
 
