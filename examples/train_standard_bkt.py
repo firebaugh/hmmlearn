@@ -10,7 +10,6 @@ from hmmlearn.bkt import BKT
 # reshape because our data has a single feature (performance)
 X = np.array([[1,1,0,0,0]]).T
 
-
 ###############################################################################
 # Run BKT
 print("fitting BKT ...", end="")
